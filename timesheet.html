@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Timesheet Tracker</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #f0f0f0; padding: 10px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 20px; border-radius: 10px; }
+        h1 { text-align: center; margin-bottom: 20px; color: #333; }
+        .totals { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        .total-box { background: #e8f4f8; padding: 15px; border-radius: 8px; border: 2px solid #0066cc; }
+        .total-label { font-size: 12px; color: #666; margin-bottom: 5px; }
+        .total-value { font-size: 28px; font-weight: bold; color: #0066cc; }
+        .export-btn { width: 100%; padding: 12px; background: #28a745; color: white; border: none; border-radius: 5px; font-size: 15px; font-weight: bold; cursor: pointer; margin-bottom: 20px; }
+        .export-btn:active { background: #1e7e34; }
+        .input-box { background: #f9f9f9; padding: 20px; border-radius: 8px; border: 1px solid #ddd; margin-bottom: 20px; }
+        .input-row { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; color: #333; font-size: 14px; }
+        input[type="date"], input[type="time"] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-size: 16px; }
+        .shifts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px; }
+        .shift-column { background: #f0f8ff; padding: 12px; border-radius: 5px; }
+        .shift-column h3 { font-size: 13px; color: #0066cc; margin-bottom: 8px; }
+        .shift-column input { margin-bottom: 8px; }
+        .btn { width: 100%; padding: 12px; background: #0066cc; color: white; border: none; border-radius: 5px; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .btn:active { background: #0052a3; }
+        .shifts-list { margin-top: 20px; }
+        .shifts-list h2 { font-size: 16px; margin-bottom: 15px; color: #333; }
+        .shift-card { background: #f9f9f9; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+        .shift-date { font-weight: bold; color: #0066cc; margin-bottom: 8px; }
+        .shift-details { font-size: 14px; color: #666; margin-bottom: 5px; }
+        .shift-pay { font-weight: bold; color: #28a745; font-size: 15px; }
+        .delete-btn { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-top: 8px; }
+        .delete-btn:active { background: #c82333; }
+        .empty { text-align: center; color: #999; padding: 30px; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>⏰ Timesheet Tracker</h1>
+
+        <div class="totals">
+            <div class="total-box">
+                <div class="total-label">Total Hours</div>
+                <div class="total-value" id="totalHours">0</div>
+            </div>
+            <div class="total-box">
+                <div class="total-label">Total Pay (@$11/hr)</div>
+                <div class="total-value" id="totalPay">$0.00</div>
+            </div>
+        </div>
+
+        <button class="export-btn" onclick="exportExcel()">📊 Export to Excel</button>
+
+        <div class="input-box">
+            <div class="input-row">
+                <label>Date</label>
+                <input type="date" id="dateInput">
+            </div>
+            <div class="shifts-row">
+                <div class="shift-column">
+                    <h3>Shift 1 (Optional)</h3>
+                    <label style="font-size:12px;">Start</label>
+                    <input type="time" id="s1s">
+                    <label style="font-size:12px;">End</label>
+                    <input type="time" id="s1e">
+                </div>
+                <div class="shift-column">
+                    <h3>Shift 2 (Optional)</h3>
+                    <label style="font-size:12px;">Start</label>
+                    <input type="time" id="s2s">
+                    <label style="font-size:12px;">End</label>
+                    <input type="time" id="s2e">
+                </div>
+            </div>
+            <button class="btn" onclick="addEntry()">Add Entry</button>
+        </div>
+
+        <div class="shifts-list">
+            <h2>Your Shifts</h2>
+            <div id="shiftsList"></div>
+        </div>
+    </div>
+
+<script>
+var RATE = 11;
+var entries = [];
+
+function calcHrs(start, end) {
+    if (!start || !end) return 0;
+    var a = start.split(':');
+    var b = end.split(':');
+    var sm = parseInt(a[0]) * 60 + parseInt(a[1]);
+    var em = parseInt(b[0]) * 60 + parseInt(b[1]);
+    if (em < sm) em += 1440;
+    return Math.round((em - sm) / 60 * 100) / 100;
+}
+
+function addEntry() {
+    var date = document.getElementById('dateInput').value;
+    var s1s = document.getElementById('s1s').value;
+    var s1e = document.getElementById('s1e').value;
+    var s2s = document.getElementById('s2s').value;
+    var s2e = document.getElementById('s2e').value;
+
+    if (!date) { alert('Please pick a date!'); return; }
+
+    var shift1ok = s1s && s1e;
+    var shift2ok = s2s && s2e;
+
+    if (!shift1ok && !shift2ok) {
+        alert('Please fill Start AND End time for at least 1 shift!');
+        return;
+    }
+
+    var h1 = shift1ok ? calcHrs(s1s, s1e) : 0;
+    var h2 = shift2ok ? calcHrs(s2s, s2e) : 0;
+
+    entries.push({
+        date: date,
+        s1s: shift1ok ? s1s : '',
+        s1e: shift1ok ? s1e : '',
+        s1h: h1,
+        s2s: shift2ok ? s2s : '',
+        s2e: shift2ok ? s2e : '',
+        s2h: h2
+    });
+
+    localStorage.setItem('tsEntries', JSON.stringify(entries));
+
+    document.getElementById('dateInput').value = '';
+    document.getElementById('s1s').value = '';
+    document.getElementById('s1e').value = '';
+    document.getElementById('s2s').value = '';
+    document.getElementById('s2e').value = '';
+
+    render();
+}
+
+function delEntry(i) {
+    entries.splice(i, 1);
+    localStorage.setItem('tsEntries', JSON.stringify(entries));
+    render();
+}
+
+function exportExcel() {
+    if (entries.length === 0) {
+        alert('No shifts to export yet!');
+        return;
+    }
+
+    var csv = 'Date,Shift 1 Start,Shift 1 End,Shift 1 Hours,Shift 1 Pay ($),Shift 2 Start,Shift 2 End,Shift 2 Hours,Shift 2 Pay ($),Total Hours,Total Pay ($)\n';
+
+    var grandHours = 0;
+    var grandPay = 0;
+
+    for (var i = 0; i < entries.length; i++) {
+        var en = entries[i];
+        var p1 = (en.s1h * RATE).toFixed(2);
+        var p2 = (en.s2h * RATE).toFixed(2);
+        var dayH = Math.round((en.s1h + en.s2h) * 100) / 100;
+        var dayP = (dayH * RATE).toFixed(2);
+
+        grandHours += dayH;
+        grandPay += parseFloat(dayP);
+
+        csv += en.date + ',';
+        csv += (en.s1s || '-') + ',';
+        csv += (en.s1e || '-') + ',';
+        csv += (en.s1h || '0') + ',';
+        csv += '$' + p1 + ',';
+        csv += (en.s2s || '-') + ',';
+        csv += (en.s2e || '-') + ',';
+        csv += (en.s2h || '0') + ',';
+        csv += '$' + p2 + ',';
+        csv += dayH + ',';
+        csv += '$' + dayP + '\n';
+    }
+
+    grandHours = Math.round(grandHours * 100) / 100;
+    grandPay = grandPay.toFixed(2);
+
+    csv += '\n';
+    csv += 'GRAND TOTAL,,,,,,,,' + ',' + grandHours + ',$' + grandPay + '\n';
+
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'Timesheet_HariKrishna.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function render() {
+    var totalH = 0;
+    for (var i = 0; i < entries.length; i++) {
+        totalH += entries[i].s1h + entries[i].s2h;
+    }
+    totalH = Math.round(totalH * 100) / 100;
+    var totalP = Math.round(totalH * RATE * 100) / 100;
+
+    document.getElementById('totalHours').textContent = totalH;
+    document.getElementById('totalPay').textContent = '$' + totalP.toFixed(2);
+
+    var el = document.getElementById('shiftsList');
+    if (entries.length === 0) {
+        el.innerHTML = '<div class="empty">No shifts logged yet</div>';
+        return;
+    }
+
+    var html = '';
+    for (var i = 0; i < entries.length; i++) {
+        var en = entries[i];
+        html += '<div class="shift-card">';
+        html += '<div class="shift-date">' + en.date + '</div>';
+
+        if (en.s1s && en.s1e) {
+            var p1 = (en.s1h * RATE).toFixed(2);
+            html += '<div class="shift-details">Shift 1: ' + en.s1s + ' - ' + en.s1e + '</div>';
+            html += '<div class="shift-details">' + en.s1h + ' hrs = $' + p1 + '</div>';
+        }
+
+        if (en.s2s && en.s2e) {
+            var p2 = (en.s2h * RATE).toFixed(2);
+            html += '<div class="shift-details">Shift 2: ' + en.s2s + ' - ' + en.s2e + '</div>';
+            html += '<div class="shift-details">' + en.s2h + ' hrs = $' + p2 + '</div>';
+        }
+
+        var dayT = Math.round((en.s1h + en.s2h) * 100) / 100;
+        var dayP = (dayT * RATE).toFixed(2);
+        html += '<div class="shift-pay">Day Total: ' + dayT + ' hrs = $' + dayP + '</div>';
+        html += '<button class="delete-btn" onclick="delEntry(' + i + ')">Delete</button>';
+        html += '</div>';
+    }
+    el.innerHTML = html;
+}
+
+var saved = localStorage.getItem('tsEntries');
+if (saved) entries = JSON.parse(saved);
+render();
+</script>
+</body>
+</html>
